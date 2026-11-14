@@ -51,6 +51,23 @@ def test_engine_rejects_docx_without_office(tmp_path: Path, monkeypatch: pytest.
         engine.run(files=[docx], do_compress=False, config=pdfconfig.load(), log=lambda _m: None)
 
 
+def test_convert_batch_times_out_cleanly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import subprocess
+
+    from pdfmerge import docx2pdf
+
+    docx = tmp_path / "supp.docx"
+    docx.write_bytes(b"PK\x03\x04placeholder")
+
+    def fake_run(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="powershell", timeout=1)
+
+    monkeypatch.setattr(docx2pdf.subprocess, "run", fake_run)
+    with pytest.raises(docx2pdf.DocxConvertError) as excinfo:
+        docx2pdf.convert_batch([docx], timeout=1, log=lambda _m: None)
+    assert "timed out" in str(excinfo.value)
+
+
 def test_detect_converters_returns_list():
     from pdfmerge.officecheck import detect_converters
 

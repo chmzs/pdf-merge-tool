@@ -64,12 +64,17 @@ def run(
     if docx_inputs:
         notify("convert", f"0/{len(docx_inputs)}")
         force_saveas = bool(config["docx"]["use_saveas"])
+        convert_timeout = float(config["docx"]["timeout_seconds"])
         failures: list[Exception] = []
         for progid, label in converters:
             log(f"  converting {len(docx_inputs)} docx via {label}")
             try:
                 converted, failed = convert_batch(
-                    docx_inputs, converter=progid, force_saveas=force_saveas, log=log
+                    docx_inputs,
+                    converter=progid,
+                    force_saveas=force_saveas,
+                    timeout=convert_timeout,
+                    log=log,
                 )
             except DocxConvertError as exc:
                 log(f"  {label} did not work: {exc}")

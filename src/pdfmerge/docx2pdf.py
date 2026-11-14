@@ -100,6 +100,7 @@ def convert_batch(
     paths: list[Path],
     converter: str = "Word.Application",
     force_saveas: bool = False,
+    timeout: float = 900,
     log=print,
 ) -> tuple[dict[str, Path], list[tuple[str, str]]]:
     """Convert every docx in one application session.
@@ -132,14 +133,21 @@ def convert_batch(
     if force_saveas:
         command.append("-ForceSaveAs")
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=NO_WINDOW,
-        )
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=NO_WINDOW,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise DocxConvertError(
+                f"conversion timed out after {timeout:g}s - Word/WPS may be blocked by a "
+                "dialog (sign-in or advertisement). Close the popup, or set docx.timeout_seconds."
+            ) from exc
         converted: dict[str, Path] = {}
         failed: list[tuple[str, str]] = []
         for line in (result.stdout or "").splitlines():

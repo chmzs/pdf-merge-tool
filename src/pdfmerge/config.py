@@ -41,6 +41,7 @@ DEFAULTS = {
         "convert": True,
         "word_single_session": True,
         "use_saveas": False,
+        "timeout_seconds": 900,
     },
 }
 
