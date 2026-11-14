@@ -1,0 +1,43 @@
+name: Build Windows binary
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Freeze with PyInstaller
+        run: >
+          pyinstaller --noconfirm --windowed --name pdf-merge-tool
+          --paths src --collect-submodules ilovepdf --collect-submodules pypdf
+          packaging/entry.py
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/pdf-merge-tool/* -DestinationPath dist/pdf-merge-tool-win64.zip -Force
+          Get-Item dist/pdf-merge-tool-win64.zip | Select-Object Name, Length
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-merge-tool-win64
+          path: dist/pdf-merge-tool-win64.zip
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pdf-merge-tool-win64.zip
+          generate_release_notes: true
