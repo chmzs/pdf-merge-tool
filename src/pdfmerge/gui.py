@@ -35,6 +35,29 @@ def human_size(num: float) -> str:
     return f"{num:.1f} GB"
 
 
+def icon_path() -> Path | None:
+    """The .ico lives in the package (frozen builds get it via PyInstaller --add-data)."""
+    candidates = [Path(__file__).resolve().parent / "assets" / "pdfmerge.ico"]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "pdfmerge" / "assets" / "pdfmerge.ico")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def apply_window_icon(root: tk.Tk) -> None:
+    icon = icon_path()
+    if icon is None:
+        return
+    try:
+        root.iconbitmap(default=str(icon))  # inherited by dialogs created later
+        root.iconbitmap(str(icon))  # the root window itself
+    except tk.TclError:
+        pass
+
+
 def worker_command() -> list[str]:
     """Command that runs the CLI worker; frozen builds reuse their own executable."""
     if getattr(sys, "frozen", False):
@@ -608,6 +631,7 @@ class App:
 
 def main() -> int:
     root = tk.Tk()
+    apply_window_icon(root)
     try:
         style = ttk.Style(root)
         if "vista" in style.theme_names():

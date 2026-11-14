@@ -23,6 +23,8 @@ jobs:
         run: >
           pyinstaller --noconfirm --windowed --name pdf-merge-tool
           --paths src --collect-submodules ilovepdf --collect-submodules pypdf
+          --icon src/pdfmerge/assets/pdfmerge.ico
+          --add-data "src/pdfmerge/assets;pdfmerge/assets"
           packaging/entry.py
       - name: Package
         shell: pwsh
