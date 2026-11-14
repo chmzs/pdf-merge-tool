@@ -11,9 +11,10 @@ from pathlib import Path
 
 from pdfmerge import config as pdfconfig
 from pdfmerge.compress import compress
-from pdfmerge.docx2pdf import convert_batch
+from pdfmerge.docx2pdf import DocxConvertError, convert_batch
 from pdfmerge.docx2pdf import supported as docx_supported
 from pdfmerge.merge import merge_pdfs
+from pdfmerge.wordcheck import word_available
 
 KNOWN_SUFFIXES = (".pdf", ".docx", ".doc")
 
@@ -45,6 +46,11 @@ def run(
             stage(name, detail)
 
     docx_inputs = [p for p in files if p.exists() and docx_supported(p)]
+    if docx_inputs and not word_available():
+        raise DocxConvertError(
+            "Microsoft Word was not detected, so DOCX cannot be converted. "
+            "Save the document as PDF first, or pass PDFs only."
+        )
     for path in files:
         if not path.exists():
             log(f"  [skip] missing: {path}")

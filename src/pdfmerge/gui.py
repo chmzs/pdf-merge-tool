@@ -13,12 +13,14 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import pdfmerge
 from pdfmerge import __version__
 from pdfmerge import config as pdfconfig
+from pdfmerge.wordcheck import word_available
 
 LEVELS = pdfconfig.VALID_LEVELS
 STAGE_LABEL = {"convert": "转换 docx", "merge": "合并", "compress": "压缩"}
@@ -142,6 +144,11 @@ class SettingsDialog(tk.Toplevel):
         ).grid(row=row, column=1, sticky="w", padx=8)
 
         row += 1
+        ttk.Button(
+            body, text="获取免费密钥（developer.ilovepdf.com）", command=self._open_keys_page
+        ).grid(row=row, column=1, sticky="w", **pad)
+
+        row += 1
         label("代理")
         ttk.Entry(body, textvariable=self.vars["proxy"], width=30).grid(row=row, column=1, sticky="w", **pad)
         row += 1
@@ -186,6 +193,9 @@ class SettingsDialog(tk.Toplevel):
         if chosen:
             self.vars["sdk_path"].set(chosen)
 
+    def _open_keys_page(self):
+        webbrowser.open(pdfconfig.ILOVEPDF_KEYS_URL)
+
     def _save(self):
         cfg = self.app.cfg
         cfg["general"]["out_dir"] = self.vars["out_dir"].get().strip()
@@ -217,6 +227,7 @@ class App:
         self.running: dict[int, subprocess.Popen | None] = {}
         self.ui_queue: queue.Queue[tuple] = queue.Queue()
         self.scheduler_lock = threading.Lock()
+        self.word_ok = word_available()
 
         root.title(f"PDF 合并压缩工具 {__version__}")
         root.geometry("920x640")
@@ -261,6 +272,7 @@ class App:
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.tag_configure("ok", foreground="#1a7f37")
         self.tree.tag_configure("fail", foreground="#c0392b")
+        self.tree.tag_configure("warn", foreground="#b26a00")
         self.tree.tag_configure("main", background="#eef5ff")
 
         opts = ttk.Frame(self.root, padding=(10, 6))
@@ -350,7 +362,11 @@ class App:
                 "end",
                 values=("", os.path.basename(path), self._kind_of(path), human_size(size), "待处理"),
             )
-            self.rows[iid] = {"path": path, "state": "待处理"}
+            state = "待处理"
+            if not self.word_ok and path.lower().endswith((".docx", ".doc")):
+                state = "缺 Word"
+            self.rows[iid] = {"path": path, "state": state}
+            self.tree.set(iid, "state", state)
             existing.add(path)
             added += 1
         if self.main_path is None and self.rows:
@@ -358,6 +374,8 @@ class App:
         self._refresh_marks()
         if added:
             self.log(f"已添加 {added} 个文件")
+        if added and not self.word_ok and any(p.lower().endswith((".docx", ".doc")) for p in paths):
+            self.log("未检测到 Microsoft Word：docx 无法转换，请先用 Word 另存为 PDF。", "err")
 
     def remove_selected(self):
         for iid in self.tree.selection():
@@ -411,6 +429,8 @@ class App:
                 tags.append("ok")
             elif row["state"] == "失败":
                 tags.append("fail")
+            elif row["state"] == "缺 Word":
+                tags.append("warn")
             self.tree.item(iid, tags=tuple(tags))
 
     def _row_order(self) -> list[str]:
@@ -441,6 +461,13 @@ class App:
             paths = self._ordered_paths()
         if not paths:
             messagebox.showinfo("提示", "列表为空，请先添加文件。")
+            return
+        if not self.word_ok and any(p.lower().endswith((".docx", ".doc")) for p in paths):
+            messagebox.showerror(
+                "未检测到 Microsoft Word",
+                "列表中有 docx 文件，但本机没有可用的 Microsoft Word，无法转换。\n"
+                "请先用 Word 另存为 PDF 再添加，或改用 PDF 输入。",
+            )
             return
         task = {
             "id": self.next_id,

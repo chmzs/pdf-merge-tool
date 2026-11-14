@@ -39,6 +39,18 @@ def test_config_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert pdfconfig.validate(pdfconfig.load()) == []
 
 
+def test_engine_rejects_docx_without_word(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PDFTOOLKIT_CONFIG_DIR", str(tmp_path))
+    from pdfmerge import engine
+    from pdfmerge.docx2pdf import DocxConvertError
+
+    monkeypatch.setattr(engine, "word_available", lambda: False)
+    docx = tmp_path / "supp.docx"
+    docx.write_bytes(b"PK\x03\x04placeholder")
+    with pytest.raises(DocxConvertError):
+        engine.run(files=[docx], do_compress=False, config=pdfconfig.load(), log=lambda _m: None)
+
+
 def test_engine_merge_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PDFTOOLKIT_CONFIG_DIR", str(tmp_path))
     cfg = pdfconfig.load()

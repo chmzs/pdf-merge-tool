@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+from pdfmerge.config import ILOVEPDF_KEYS_URL
+
 
 class CompressConfigError(RuntimeError):
     """Keys or settings are missing."""
@@ -22,8 +24,9 @@ def compress(inp: Path, out: Path, level: str, config: dict, log=print) -> tuple
     secret_key = ilovepdf["secret_key"].strip()
     if not public_key or not secret_key:
         raise CompressConfigError(
-            "iLovePDF keys are not configured. Open the GUI settings page, or run "
-            "'python -m pdfmerge.config --path' to locate the config file."
+            "iLovePDF keys are not configured. Get a free key at "
+            f"{ILOVEPDF_KEYS_URL} and paste it into the GUI settings page "
+            "(or edit the config file: python -m pdfmerge.config --path)."
         )
 
     os.environ["DEFAULT_TIMEOUT_SECONDS"] = os.environ.get(

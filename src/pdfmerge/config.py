@@ -44,6 +44,7 @@ DEFAULTS = {
 }
 
 VALID_LEVELS = ("low", "recommended", "extreme")
+ILOVEPDF_KEYS_URL = "https://developer.ilovepdf.com/user/projects"
 
 
 def config_path() -> Path:

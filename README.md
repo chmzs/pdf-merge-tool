@@ -34,9 +34,15 @@ Requires Python 3.10+. On Windows only for the GUI and DOCX conversion (DOCX nee
 
 ## iLovePDF keys
 
-Create a free account at <https://developer.ilovepdf.com>, put the public/secret key into the
-GUI settings page (or `config.toml`). The free tier has a monthly task quota; the tool uploads
-the merged PDF to iLovePDF and downloads the result — nothing else leaves the machine.
+No key ships with this tool — a shared key would be extractable from any public binary, so every
+user brings their own (free tier is enough for personal use).
+
+1. Register at <https://developer.ilovepdf.com/user/projects> and create a project.
+2. Open the GUI → 设置 → click **获取免费密钥** (or paste the two keys manually).
+3. `config.toml` lives at `%APPDATA%\PDFToolkit\config.toml`; the CLI reads the same file.
+
+The tool uploads the merged PDF to iLovePDF and downloads the result — nothing else leaves the
+machine.
 
 ```toml
 [ilovepdf]
