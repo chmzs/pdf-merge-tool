@@ -40,6 +40,7 @@ DEFAULTS = {
     "docx": {
         "convert": True,
         "word_single_session": True,
+        "use_saveas": False,
     },
 }
 

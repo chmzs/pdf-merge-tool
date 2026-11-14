@@ -8,7 +8,7 @@ one small dependency set, no local build step required to use it.
 
 ## Features
 
-- **Merge then compress** — DOCX is converted to PDF through Word; PDFs are concatenated with pypdf; the result is compressed by the iLovePDF API (`low` by default).
+- **Merge then compress** — DOCX is converted to PDF through Microsoft Word **or WPS Office** (auto-detected, one application session per batch); PDFs are concatenated with pypdf; the result is compressed by the iLovePDF API (`low` by default).
 - **Batch DOCX conversion in one Word session** — N documents cost one Word start instead of N.
 - **GUI** — file table with a "main" file (double-click to set; it is merged first and names the output), reorder, live streamed log, progress bar, cancel (kills the child process tree), failed rows stay for retry, settings page.
 - **Task queue** — configurable concurrency (default 2; iLovePDF rate-limits aggressive use).
@@ -85,7 +85,7 @@ release when a `v*` tag is pushed. Nothing needs to be built locally.
 
 ## Limitations
 
-- DOCX conversion uses Word COM, so it is Windows + Microsoft Word only.
+- DOCX conversion needs Windows plus Microsoft Word or WPS Office (`Word.Application`, then `KWPS.Application`). If both are missing the task fails before any upload, so no quota is wasted. LibreOffice is not supported.
 - Compression is a cloud call: quality/size is whatever iLovePDF returns for the chosen level.
 - pypdf merging is single-threaded; merging is fast, the network upload dominates.
 

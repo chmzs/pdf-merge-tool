@@ -20,7 +20,7 @@ from tkinter import filedialog, messagebox, ttk
 import pdfmerge
 from pdfmerge import __version__
 from pdfmerge import config as pdfconfig
-from pdfmerge.wordcheck import word_available
+from pdfmerge.officecheck import detect_converters
 
 LEVELS = pdfconfig.VALID_LEVELS
 STAGE_LABEL = {"convert": "转换 docx", "merge": "合并", "compress": "压缩"}
@@ -144,9 +144,9 @@ class SettingsDialog(tk.Toplevel):
         ).grid(row=row, column=1, sticky="w", padx=8)
 
         row += 1
-        ttk.Button(
-            body, text="获取免费密钥（developer.ilovepdf.com）", command=self._open_keys_page
-        ).grid(row=row, column=1, sticky="w", **pad)
+        ttk.Button(body, text="获取免费密钥（developer.ilovepdf.com）", command=self._open_keys_page).grid(
+            row=row, column=1, sticky="w", **pad
+        )
 
         row += 1
         label("代理")
@@ -227,7 +227,7 @@ class App:
         self.running: dict[int, subprocess.Popen | None] = {}
         self.ui_queue: queue.Queue[tuple] = queue.Queue()
         self.scheduler_lock = threading.Lock()
-        self.word_ok = word_available()
+        self.converters = detect_converters()
 
         root.title(f"PDF 合并压缩工具 {__version__}")
         root.geometry("920x640")
@@ -324,6 +324,9 @@ class App:
         self.level_var.set(self.cfg["compress"]["level"])
         self.outdir_var.set(self.cfg["general"]["out_dir"])
         self.compress_var.set(bool(self.cfg["compress"]["enabled"]))
+        if getattr(self, "log_text", None) is not None:
+            names = ", ".join(label for _progid, label in self.converters)
+            self.log("可用转换器：" + (names or "未检测到 Microsoft Word / WPS，docx 需先转 PDF"))
 
     def _kind_of(self, path: str) -> str:
         return "DOCX" if os.path.splitext(path)[1].lower() in (".docx", ".doc") else "PDF"
@@ -363,8 +366,8 @@ class App:
                 values=("", os.path.basename(path), self._kind_of(path), human_size(size), "待处理"),
             )
             state = "待处理"
-            if not self.word_ok and path.lower().endswith((".docx", ".doc")):
-                state = "缺 Word"
+            if not self.converters and path.lower().endswith((".docx", ".doc")):
+                state = "缺 Office"
             self.rows[iid] = {"path": path, "state": state}
             self.tree.set(iid, "state", state)
             existing.add(path)
@@ -374,8 +377,8 @@ class App:
         self._refresh_marks()
         if added:
             self.log(f"已添加 {added} 个文件")
-        if added and not self.word_ok and any(p.lower().endswith((".docx", ".doc")) for p in paths):
-            self.log("未检测到 Microsoft Word：docx 无法转换，请先用 Word 另存为 PDF。", "err")
+        if added and not self.converters and any(p.lower().endswith((".docx", ".doc")) for p in paths):
+            self.log("未检测到 Microsoft Word / WPS：docx 无法转换，请先另存为 PDF。", "err")
 
     def remove_selected(self):
         for iid in self.tree.selection():
@@ -429,7 +432,7 @@ class App:
                 tags.append("ok")
             elif row["state"] == "失败":
                 tags.append("fail")
-            elif row["state"] == "缺 Word":
+            elif row["state"] == "缺 Office":
                 tags.append("warn")
             self.tree.item(iid, tags=tuple(tags))
 
@@ -462,11 +465,11 @@ class App:
         if not paths:
             messagebox.showinfo("提示", "列表为空，请先添加文件。")
             return
-        if not self.word_ok and any(p.lower().endswith((".docx", ".doc")) for p in paths):
+        if not self.converters and any(p.lower().endswith((".docx", ".doc")) for p in paths):
             messagebox.showerror(
-                "未检测到 Microsoft Word",
-                "列表中有 docx 文件，但本机没有可用的 Microsoft Word，无法转换。\n"
-                "请先用 Word 另存为 PDF 再添加，或改用 PDF 输入。",
+                "未检测到 Word / WPS",
+                "列表中有 docx 文件，但本机既没有 Microsoft Word 也没有 WPS Office，无法转换。\n"
+                "请安装其一，或先另存为 PDF 再添加。",
             )
             return
         task = {

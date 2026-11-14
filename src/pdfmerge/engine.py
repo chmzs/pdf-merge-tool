@@ -14,7 +14,7 @@ from pdfmerge.compress import compress
 from pdfmerge.docx2pdf import DocxConvertError, convert_batch
 from pdfmerge.docx2pdf import supported as docx_supported
 from pdfmerge.merge import merge_pdfs
-from pdfmerge.wordcheck import word_available
+from pdfmerge.officecheck import detect_converters
 
 KNOWN_SUFFIXES = (".pdf", ".docx", ".doc")
 
@@ -46,10 +46,11 @@ def run(
             stage(name, detail)
 
     docx_inputs = [p for p in files if p.exists() and docx_supported(p)]
-    if docx_inputs and not word_available():
+    converters = detect_converters()
+    if docx_inputs and not converters:
         raise DocxConvertError(
-            "Microsoft Word was not detected, so DOCX cannot be converted. "
-            "Save the document as PDF first, or pass PDFs only."
+            "Neither Microsoft Word nor WPS Office was detected, so DOCX cannot be converted. "
+            "Install one of them, save the document as PDF first, or pass PDFs only."
         )
     for path in files:
         if not path.exists():
@@ -62,10 +63,25 @@ def run(
     converted: dict[str, Path] = {}
     if docx_inputs:
         notify("convert", f"0/{len(docx_inputs)}")
-        converted, failed = convert_batch(docx_inputs, log=log)
+        force_saveas = bool(config["docx"]["use_saveas"])
+        failures: list[Exception] = []
+        for progid, label in converters:
+            log(f"  converting {len(docx_inputs)} docx via {label}")
+            try:
+                converted, failed = convert_batch(
+                    docx_inputs, converter=progid, force_saveas=force_saveas, log=log
+                )
+            except DocxConvertError as exc:
+                log(f"  {label} did not work: {exc}")
+                failures.append(exc)
+                converted, failed = {}, []
+                continue
+            for source, _message in failed:
+                result.warnings.append(f"docx conversion failed: {Path(source).name}")
+            break
+        else:
+            raise failures[-1]
         notify("convert", f"{len(converted)}/{len(docx_inputs)}")
-        for source, _message in failed:
-            result.warnings.append(f"docx conversion failed: {Path(source).name}")
 
     pdfs: list[Path] = []
     for path in files:

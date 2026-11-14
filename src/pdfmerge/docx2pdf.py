@@ -1,7 +1,9 @@
-"""DOCX -> PDF conversion through the Microsoft Word COM interface (Windows only).
+"""DOCX -> PDF conversion through a Word-compatible COM interface (Windows only).
 
-The whole batch shares one Word instance. Starting Word costs a few seconds, so
-converting N files in one session is the difference between roughly N * 5 s and ~5 s.
+Microsoft Word and WPS Office both expose Documents.Open / ExportAsFixedFormat (or SaveAs),
+so the same PowerShell routine drives either one. The whole batch shares a single
+application instance: starting Word/WPS costs seconds, so converting N files in one session
+is the difference between roughly N * 5 s and ~5 s.
 """
 
 from __future__ import annotations
@@ -16,23 +18,46 @@ WORD_SUFFIXES = (".docx", ".doc")
 
 POWERSHELL_SCRIPT = """
 param(
-    [Parameter(Mandatory=$true)][string]$JobFile
+    [Parameter(Mandatory=$true)][string]$JobFile,
+    [string]$Converter = 'Word.Application',
+    [switch]$ForceSaveAs
 )
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $ErrorActionPreference = 'Stop'
 $jobs = Get-Content -Raw -Encoding UTF8 $JobFile | ConvertFrom-Json
-$word = $null
+$app = $null
 try {
-    $word = New-Object -ComObject Word.Application
-    $word.Visible = $false
-    $word.DisplayAlerts = 0
+    $app = New-Object -ComObject $Converter
+    try { $app.Visible = $false } catch { }
+    try { $app.DisplayAlerts = 0 } catch { }
+    $appName = ''
+    try { $appName = $app.Name } catch { }
+    Write-Output ("INFO" + [char]9 + $Converter + [char]9 + $appName)
     foreach ($job in $jobs) {
         $doc = $null
         try {
-            $doc = $word.Documents.Open($job.In, $false, $true)
-            foreach ($sec in $doc.Sections) {
-                if ($sec.PageSetup.LineNumbering.Active) { $sec.PageSetup.LineNumbering.Active = 0 }
+            $doc = $app.Documents.Open($job.In, $false, $true)
+            try {
+                foreach ($sec in $doc.Sections) {
+                    if ($sec.PageSetup.LineNumbering.Active) { $sec.PageSetup.LineNumbering.Active = 0 }
+                }
+            } catch { }
+            $saved = $false
+            if (-not $ForceSaveAs) {
+                try {
+                    $doc.ExportAsFixedFormat($job.Out, 17, $false, 0)
+                    $saved = $true
+                } catch { }
             }
-            $doc.ExportAsFixedFormat($job.Out, 17, $false, 0)
+            if (-not $saved) {
+                try {
+                    $doc.SaveAs2($job.Out, 17)
+                    $saved = $true
+                } catch {
+                    $doc.SaveAs([ref]$job.Out, [ref]17)
+                    $saved = $true
+                }
+            }
             Write-Output ("OK" + [char]9 + $job.Out)
         }
         catch {
@@ -48,11 +73,15 @@ try {
     }
 }
 catch {
-    Write-Error "FAILED: $($_.Exception.Message)"
+    $reason = $_.Exception.Message.Replace([char]10, " ").Replace([char]13, " ")
+    [Console]::Error.WriteLine("FAILED: " + $reason)
     exit 1
 }
 finally {
-    if ($word) { $word.Quit(); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) }
+    if ($app) {
+        $app.Quit()
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($app)
+    }
 }
 """
 
@@ -60,17 +89,23 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class DocxConvertError(RuntimeError):
-    """Word is missing or the conversion process failed."""
+    """No usable Word/WPS installation, or the conversion process failed."""
 
 
 def supported(path: Path) -> bool:
     return path.suffix.lower() in WORD_SUFFIXES
 
 
-def convert_batch(paths: list[Path], log=print) -> tuple[dict[str, Path], list[tuple[str, str]]]:
-    """Convert every docx in one Word session.
+def convert_batch(
+    paths: list[Path],
+    converter: str = "Word.Application",
+    force_saveas: bool = False,
+    log=print,
+) -> tuple[dict[str, Path], list[tuple[str, str]]]:
+    """Convert every docx in one application session.
 
     Returns ({original stem: converted pdf path}, [(failed source, message), ...]).
+    Raises DocxConvertError when the converter cannot even be started.
     """
     if not paths:
         return {}, []
@@ -82,18 +117,23 @@ def convert_batch(paths: list[Path], log=print) -> tuple[dict[str, Path], list[t
     script_file = str(Path(job_file).with_suffix(".ps1"))
     Path(script_file).write_text(POWERSHELL_SCRIPT, encoding="utf-8")
     Path(job_file).write_text(json.dumps(jobs, ensure_ascii=False), encoding="utf-8")
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script_file,
+        "-JobFile",
+        job_file,
+        "-Converter",
+        converter,
+    ]
+    if force_saveas:
+        command.append("-ForceSaveAs")
     try:
         result = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                script_file,
-                "-JobFile",
-                job_file,
-            ],
+            command,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -104,13 +144,19 @@ def convert_batch(paths: list[Path], log=print) -> tuple[dict[str, Path], list[t
         failed: list[tuple[str, str]] = []
         for line in (result.stdout or "").splitlines():
             parts = line.split("\t")
-            if parts[0] == "OK" and len(parts) >= 2:
+            if parts[0] == "INFO" and len(parts) >= 3:
+                shown = parts[2].strip() or parts[1]
+                log(f"  [converter] {parts[1]} -> {shown}")
+            elif parts[0] == "OK" and len(parts) >= 2:
                 out_path = Path(parts[1])
                 converted[out_path.name.replace("_conv.pdf", "")] = out_path
             elif parts[0] == "FAIL" and len(parts) >= 2:
                 failed.append((parts[1], parts[2] if len(parts) > 2 else "unknown error"))
         if result.returncode != 0 and not converted and not failed:
-            raise DocxConvertError((result.stderr or "Word conversion failed").strip()[:400])
+            raise DocxConvertError((result.stderr or "conversion process failed").strip()[:400])
+        if failed and not converted:
+            reasons = "; ".join(message for _source, message in failed[:2])
+            raise DocxConvertError(f"all conversions failed ({reasons})"[:400])
         for source, message in failed:
             log(f"  [docx failed] {os.path.basename(source)}: {message}")
         for out_path in converted.values():
