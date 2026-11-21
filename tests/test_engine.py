@@ -51,6 +51,48 @@ def test_engine_rejects_docx_without_office(tmp_path: Path, monkeypatch: pytest.
         engine.run(files=[docx], do_compress=False, config=pdfconfig.load(), log=lambda _m: None)
 
 
+def test_check_available_flags_missing_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PDFTOOLKIT_CONFIG_DIR", str(tmp_path))
+    from pdfmerge.compress import check_available
+
+    cfg = pdfconfig.load()
+    cfg["ilovepdf"]["public_key"] = ""
+    cfg["ilovepdf"]["secret_key"] = ""
+    cfg["ilovepdf"]["sdk_path"] = str(tmp_path / "missing")
+    problems = check_available(cfg)
+    assert any("keys are missing" in problem for problem in problems)
+
+
+def test_check_available_flags_unimportable_sdk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PDFTOOLKIT_CONFIG_DIR", str(tmp_path))
+    from pdfmerge import compress as compress_module
+
+    cfg = pdfconfig.load()
+    cfg["ilovepdf"]["public_key"] = "public"
+    cfg["ilovepdf"]["secret_key"] = "secret"
+
+    def broken(_config):
+        raise ImportError("no such module")
+
+    monkeypatch.setattr(compress_module, "_load_sdk", broken)
+    problems = compress_module.check_available(cfg)
+    assert problems and "pip install ilovepdf" in problems[0]
+
+
+def test_engine_refuses_to_start_without_compress_prereqs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PDFTOOLKIT_CONFIG_DIR", str(tmp_path))
+    from pdfmerge import engine
+    from pdfmerge.compress import CompressConfigError
+
+    cfg = pdfconfig.load()
+    cfg["ilovepdf"]["public_key"] = ""
+    cfg["ilovepdf"]["secret_key"] = ""
+    monkeypatch.setattr(engine, "check_available", lambda _cfg: ["no keys"])
+    pdf = make_pdf(tmp_path / "main.pdf", pages=1)
+    with pytest.raises(CompressConfigError):
+        engine.run(files=[pdf], do_compress=True, config=cfg, log=lambda _m: None)
+
+
 def test_convert_batch_times_out_cleanly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import subprocess
 

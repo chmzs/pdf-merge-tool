@@ -20,6 +20,7 @@ from tkinter import filedialog, messagebox, ttk
 import pdfmerge
 from pdfmerge import __version__
 from pdfmerge import config as pdfconfig
+from pdfmerge.compress import check_available
 from pdfmerge.officecheck import detect_converters
 
 LEVELS = pdfconfig.VALID_LEVELS
@@ -488,6 +489,12 @@ class App:
         if not paths:
             messagebox.showinfo("提示", "列表为空，请先添加文件。")
             return
+        if self.compress_var.get():
+            problems = check_available(self.cfg)
+            if problems:
+                self.log("压缩前置检查失败：" + "; ".join(problems), "err")
+                messagebox.showerror("压缩不可用，任务未启动", "\n".join("- " + p for p in problems))
+                return
         if not self.converters and any(p.lower().endswith((".docx", ".doc")) for p in paths):
             messagebox.showerror(
                 "未检测到 Word / WPS",

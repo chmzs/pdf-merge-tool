@@ -17,6 +17,35 @@ class CompressSDKMissing(RuntimeError):
     """The ilovepdf package cannot be imported."""
 
 
+def _load_sdk(config: dict):
+    """Import the SDK, honouring an explicit local path when one is configured."""
+    sdk_path = config["ilovepdf"]["sdk_path"].strip()
+    if sdk_path:
+        sys.path.insert(0, sdk_path)
+    from ilovepdf.compress_task import CompressTask
+
+    return CompressTask
+
+
+def check_available(config: dict) -> list[str]:
+    """Everything that makes a compression call fail, checked before any work is spent."""
+    problems: list[str] = []
+    ilovepdf = config["ilovepdf"]
+    if not ilovepdf["public_key"].strip() or not ilovepdf["secret_key"].strip():
+        problems.append(
+            f"iLovePDF keys are missing - get a free key at {ILOVEPDF_KEYS_URL} "
+            "and paste it into the settings page"
+        )
+    try:
+        _load_sdk(config)
+    except ImportError:
+        problems.append(
+            "iLovePDF SDK is not importable - run 'pip install ilovepdf', "
+            "or point ilovepdf.sdk_path at a local copy of the package"
+        )
+    return problems
+
+
 def compress(inp: Path, out: Path, level: str, config: dict, log=print) -> tuple[int, int]:
     """Upload one PDF, download the compressed result. Returns (in_bytes, out_bytes)."""
     ilovepdf = config["ilovepdf"]
@@ -37,11 +66,8 @@ def compress(inp: Path, out: Path, level: str, config: dict, log=print) -> tuple
         os.environ.setdefault("HTTP_PROXY", proxy)
         os.environ.setdefault("HTTPS_PROXY", proxy)
 
-    sdk_path = ilovepdf["sdk_path"].strip()
-    if sdk_path:
-        sys.path.insert(0, sdk_path)
     try:
-        from ilovepdf.compress_task import CompressTask
+        CompressTask = _load_sdk(config)
     except ImportError as exc:  # pragma: no cover - depends on local install
         raise CompressSDKMissing(f"iLovePDF SDK is not importable: {exc}") from exc
 

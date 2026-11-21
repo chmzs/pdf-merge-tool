@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pdfmerge import config as pdfconfig
-from pdfmerge.compress import compress
+from pdfmerge.compress import CompressConfigError, check_available, compress
 from pdfmerge.docx2pdf import DocxConvertError, convert_batch
 from pdfmerge.docx2pdf import supported as docx_supported
 from pdfmerge.merge import merge_pdfs
@@ -40,6 +40,10 @@ def run(
     if keep_merged is None:
         keep_merged = bool(config["general"]["keep_merged"])
     result = Result()
+    if do_compress:
+        problems = check_available(config)
+        if problems:
+            raise CompressConfigError("; ".join(problems))
 
     def notify(name: str, detail: str = "") -> None:
         if stage:
